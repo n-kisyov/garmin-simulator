@@ -2,6 +2,7 @@ package fitgen
 
 import (
 	"encoding/binary"
+	"io"
 	"os"
 	"time"
 
@@ -88,6 +89,10 @@ func (b *Builder) WriteToFile(filename string) error {
 		return err
 	}
 	defer file.Close()
+	return b.WriteTo(file)
+}
 
-	return fit.Encode(file, b.file, binary.LittleEndian)
+// WriteTo writes the accumulated FIT file to the provided io.Writer.
+func (b *Builder) WriteTo(w io.Writer) error {
+	return fit.Encode(w, b.file, binary.LittleEndian)
 }

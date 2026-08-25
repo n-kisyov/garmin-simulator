@@ -23,8 +23,12 @@ func ParseKMLCoordinates(kmlFile string) ([]Point, error) {
 		return nil, err
 	}
 	defer file.Close()
+	return ParseKMLCoordinatesFromReader(file)
+}
 
-	content, err := io.ReadAll(file)
+// ParseKMLCoordinatesFromReader parses KML coordinates from an io.Reader.
+func ParseKMLCoordinatesFromReader(r io.Reader) ([]Point, error) {
+	content, err := io.ReadAll(r)
 	if err != nil {
 		return nil, err
 	}

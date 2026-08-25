@@ -15,9 +15,13 @@ if ($Clean) {
 
 Write-Host "Building $exeName..."
 go build -o $exeName
-$buildResult = $LASTEXITCODE
+$buildResult1 = $LASTEXITCODE
 
-if ($buildResult -eq 0) {
+Write-Host "Building fitsimweb.exe..."
+go build -o fitsimweb.exe ./cmd/fitsimweb
+$buildResult2 = $LASTEXITCODE
+
+if ($buildResult1 -eq 0 -and $buildResult2 -eq 0) {
     Write-Host "Build successful!" -ForegroundColor Green
     
     if ($RunAfterBuild) {
@@ -25,5 +29,5 @@ if ($buildResult -eq 0) {
         .\$exeName -h
     }
 } else {
-    Write-Host "Build failed with exit code $buildResult." -ForegroundColor Red
+    Write-Host "Build failed. fitsim exit code: $buildResult1, fitsimweb exit code: $buildResult2" -ForegroundColor Red
 }
