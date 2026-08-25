@@ -1,6 +1,7 @@
 package fitgen
 
 import (
+	"encoding/binary"
 	"os"
 	"time"
 
@@ -9,22 +10,26 @@ import (
 
 // Builder helps construct a Garmin FIT activity file.
 type Builder struct {
+	file     *fit.File
 	activity *fit.ActivityFile
 }
 
 // NewBuilder initializes a new FIT Activity builder.
 func NewBuilder(startTime time.Time, product uint16, serial uint32) *Builder {
-	activity, _ := fit.NewActivityFile()
+	f, _ := fit.NewFile(fit.FileTypeActivity, fit.NewHeader(fit.V20, true))
 	
 	// FileId
-	activity.FileId.Type = fit.FileTypeActivity
-	activity.FileId.Manufacturer = fit.ManufacturerGarmin
-	activity.FileId.Product = product
-	activity.FileId.TimeCreated = startTime
-	activity.FileId.SerialNumber = serial
+	f.FileId.Type = fit.FileTypeActivity
+	f.FileId.Manufacturer = fit.ManufacturerGarmin
+	f.FileId.Product = product
+	f.FileId.TimeCreated = startTime
+	f.FileId.SerialNumber = serial
+
+	act, _ := f.Activity()
 
 	return &Builder{
-		activity: activity,
+		file:     f,
+		activity: act,
 	}
 }
 
@@ -34,22 +39,10 @@ func (b *Builder) AddDeviceInfo(timestamp time.Time, product uint16, serial uint
 	msg.Timestamp = timestamp
 	msg.Manufacturer = fit.ManufacturerGarmin
 	msg.Product = product
-	msg.SerialNumber = uint32z(serial)
-	msg.SoftwareVersion = swVersion
+	msg.SerialNumber = serial
+	msg.SoftwareVersion = uint16(swVersion * 100)
 	msg.DeviceIndex = 0
-	b.activity.DeviceInfoMsgs = append(b.activity.DeviceInfoMsgs, msg)
-}
-
-// uint32z handles optional uint32
-func uint32z(v uint32) uint32 { return v }
-
-// AddSport adds a sport message.
-func (b *Builder) AddSport(sport fit.Sport, subSport fit.SubSport, name string) {
-	msg := fit.NewSportMsg()
-	msg.Sport = sport
-	msg.SubSport = subSport
-	msg.Name = name
-	b.activity.SportMsgs = append(b.activity.SportMsgs, msg)
+	b.activity.DeviceInfos = append(b.activity.DeviceInfos, msg)
 }
 
 // AddEvent adds an event message.
@@ -58,7 +51,7 @@ func (b *Builder) AddEvent(timestamp time.Time, event fit.Event, eventType fit.E
 	msg.Timestamp = timestamp
 	msg.Event = event
 	msg.EventType = eventType
-	b.activity.EventMsgs = append(b.activity.EventMsgs, msg)
+	b.activity.Events = append(b.activity.Events, msg)
 }
 
 // AddRecord adds a record message.
@@ -82,7 +75,7 @@ func (b *Builder) AddActivity(timestamp time.Time, totalTimerTime uint32, numSes
 	msg.Timestamp = timestamp
 	msg.TotalTimerTime = totalTimerTime
 	msg.NumSessions = numSessions
-	msg.Type = fit.ActivityManual
+	msg.Type = fit.ActivityModeManual
 	msg.Event = event
 	msg.EventType = eventType
 	b.activity.Activity = msg
@@ -96,6 +89,5 @@ func (b *Builder) WriteToFile(filename string) error {
 	}
 	defer file.Close()
 
-	fitFile := b.activity.File()
-	return fit.Encode(file, fitFile, fit.LittleEndian)
+	return fit.Encode(file, b.file, binary.LittleEndian)
 }
