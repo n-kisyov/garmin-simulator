@@ -11,6 +11,9 @@ var rootCmd = &cobra.Command{
 	Use:   "fitsim",
 	Short: "A tool to generate Garmin FIT activity files",
 	Long:  `fitsim generates various Garmin activity FIT files (run, cycle, etc) for testing and simulation.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runInteractiveMenu()
+	},
 }
 
 func Execute() {
