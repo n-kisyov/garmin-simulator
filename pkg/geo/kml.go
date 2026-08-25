@@ -29,7 +29,7 @@ func ParseKMLCoordinates(kmlFile string) ([]Point, error) {
 		return nil, err
 	}
 
-	re := regexp.MustCompile(`<coordinates>(.*?)</coordinates>`)
+	re := regexp.MustCompile(`(?s)<coordinates>(.*?)</coordinates>`)
 	matches := re.FindAllStringSubmatch(string(content), -1)
 
 	if len(matches) == 0 {
