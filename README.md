@@ -14,6 +14,10 @@ The simulator supports creating the following Garmin activities:
 - `strength`
 - `yoga`
 - `meditation`
+- `ski` (Alpine & Cross-Country)
+- `row` (Indoor & Outdoor)
+- `ebike`
+- `field` (Basketball, Soccer, Tennis)
 
 ## Building
 
