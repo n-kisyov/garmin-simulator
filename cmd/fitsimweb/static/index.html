@@ -84,7 +84,7 @@
 <body>
 <div class="wrap">
   <h1>Garmin FIT Simulator</h1>
-  <p class="sub">Generate a synthetic <code>.fit</code> activity file and download it.</p>
+  <p class="sub">Generate a synthetic <code>.fit</code> activity file and download it. Ask for more than one and you get a numbered series, each file starting a minute later, zipped together.</p>
 
   <div class="card">
     <label>Activity</label>
@@ -176,7 +176,15 @@ function render() {
 
   addField({
     name: "datetime", label: "Start date &amp; time", type: "datetime-local",
-    value: prev.get("datetime") || nowLocal(), required: true, full: true,
+    value: prev.get("datetime") || nowLocal(), required: true,
+  });
+
+  // Above 1 this becomes a series: run1.fit, run2.fit, ... each starting a
+  // minute after the last, delivered as one zip.
+  addField({
+    name: "count", label: "Files <span class='hint'>1 min apart</span>",
+    type: "number", step: "1", min: "1", max: "100",
+    value: prev.get("count") || "1", required: true,
   });
 
   for (const f of cfg.fields) {
@@ -218,6 +226,7 @@ function addField(spec) {
     input.type = spec.type;
     if (spec.step) input.step = spec.step;
     if (spec.min) input.min = spec.min;
+    if (spec.max) input.max = spec.max;
     if (spec.accept) input.accept = spec.accept;
     if (spec.type !== "file" && spec.value != null) input.value = spec.value;
   }
@@ -226,6 +235,12 @@ function addField(spec) {
   if (spec.required) input.required = true;
   wrap.appendChild(input);
   fieldsEl.appendChild(wrap);
+}
+
+// The server names the download: a single .fit, or a .zip holding the series.
+function filenameFromResponse(res) {
+  const m = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") || "");
+  return m ? m[1] : "";
 }
 
 function show(text, kind) {
@@ -246,13 +261,15 @@ formEl.addEventListener("submit", async (e) => {
   fd.set("datetime", cli);
   fd.set("activity", current);
 
+  const count = Number(fd.get("count")) || 1;
+
   // An empty file input still serializes a zero-byte part; drop it so the server
   // treats the route as absent rather than as an empty upload.
   const kml = fd.get("kml_file");
   if (!kml || !kml.name) fd.delete("kml_file");
 
   submitEl.disabled = true;
-  submitEl.textContent = "Generating...";
+  submitEl.textContent = count > 1 ? `Generating ${count} files...` : "Generating...";
   try {
     const res = await fetch("/api/simulate", { method: "POST", body: fd });
     if (!res.ok) {
@@ -260,15 +277,17 @@ formEl.addEventListener("submit", async (e) => {
       return;
     }
     const blob = await res.blob();
+    const name = filenameFromResponse(res) || `${current}.${count > 1 ? "zip" : "fit"}`;
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${current}.fit`;
+    a.download = name;
     document.body.appendChild(a);
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
-    show(`Downloaded ${current}.fit (${blob.size.toLocaleString()} bytes).`, "ok");
+    const what = count > 1 ? `${name} — ${count} files, one minute apart` : name;
+    show(`Downloaded ${what} (${blob.size.toLocaleString()} bytes).`, "ok");
   } catch (err) {
     show("Could not reach the server: " + err.message, "err");
   } finally {

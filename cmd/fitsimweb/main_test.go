@@ -1,6 +1,7 @@
 package main
 
 import (
+	"archive/zip"
 	"bytes"
 	"mime/multipart"
 	"net/http"
@@ -8,6 +9,9 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
+
+	"github.com/tormoder/fit"
 )
 
 // formField is one part of a multipart request body.
@@ -221,5 +225,126 @@ func TestHappyPathReturnsFIT(t *testing.T) {
 	}
 	if got := rec.Header().Get("Content-Disposition"); got != `attachment; filename="run.fit"` {
 		t.Errorf("Content-Disposition = %q", got)
+	}
+}
+
+// startTimeOf decodes a FIT file from a zip entry and reports when its session
+// began, which is the only thing that may differ between files in a series.
+func startTimeOf(t *testing.T, f *zip.File) time.Time {
+	t.Helper()
+	rc, err := f.Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rc.Close()
+
+	decoded, err := fit.Decode(rc)
+	if err != nil {
+		t.Fatalf("%s: %v", f.Name, err)
+	}
+	activity, err := decoded.Activity()
+	if err != nil {
+		t.Fatalf("%s: %v", f.Name, err)
+	}
+	if len(activity.Sessions) == 0 {
+		t.Fatalf("%s: no sessions", f.Name)
+	}
+	return activity.Sessions[0].StartTime
+}
+
+// TestSeriesIsZippedAndOffsetByAMinute covers the point of the count field: the
+// response carries every file, they are numbered, and each starts a minute after
+// the one before it.
+func TestSeriesIsZippedAndOffsetByAMinute(t *testing.T) {
+	chdirToRepoRoot(t)
+	isolatedTempRoot(t)
+
+	req := buildRequest(t, []formField{
+		{key: "activity", value: "run"},
+		{key: "speed", value: "10.0"},
+		{key: "datetime", value: "26-08-26 09:00:00"},
+		{key: "count", value: "3"},
+		{key: "kml_file", value: sampleKML(t), filename: "route.kml"},
+	})
+	rec := httptest.NewRecorder()
+	simulateHandler(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Content-Disposition"); got != `attachment; filename="run.zip"` {
+		t.Errorf("Content-Disposition = %q", got)
+	}
+	if got := rec.Header().Get("Content-Type"); got != "application/zip" {
+		t.Errorf("Content-Type = %q, want application/zip", got)
+	}
+
+	body := rec.Body.Bytes()
+	zr, err := zip.NewReader(bytes.NewReader(body), int64(len(body)))
+	if err != nil {
+		t.Fatalf("response is not a zip: %v", err)
+	}
+
+	want := []string{"run1.fit", "run2.fit", "run3.fit"}
+	if len(zr.File) != len(want) {
+		t.Fatalf("zip holds %d files, want %d", len(zr.File), len(want))
+	}
+	for i, f := range zr.File {
+		if f.Name != want[i] {
+			t.Errorf("entry %d = %q, want %q", i, f.Name, want[i])
+		}
+		gotStart := startTimeOf(t, f)
+		wantStart := time.Date(2026, time.August, 26, 9, i, 0, 0, time.UTC)
+		if !gotStart.Equal(wantStart) {
+			t.Errorf("%s starts at %s, want %s", f.Name, gotStart, wantStart)
+		}
+	}
+}
+
+// TestSingleFileStaysUnzipped pins the default: asking for one file still returns
+// a bare .fit, as it did before count existed.
+func TestSingleFileStaysUnzipped(t *testing.T) {
+	chdirToRepoRoot(t)
+	isolatedTempRoot(t)
+
+	req := buildRequest(t, []formField{
+		{key: "activity", value: "run"},
+		{key: "speed", value: "10.0"},
+		{key: "datetime", value: "26-08-26 09:00:00"},
+		{key: "count", value: "1"},
+		{key: "kml_file", value: sampleKML(t), filename: "route.kml"},
+	})
+	rec := httptest.NewRecorder()
+	simulateHandler(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Content-Disposition"); got != `attachment; filename="run.fit"` {
+		t.Errorf("Content-Disposition = %q", got)
+	}
+	if body := rec.Body.Bytes(); len(body) < 12 || string(body[8:12]) != ".FIT" {
+		t.Errorf("response is not a FIT file (%d bytes)", len(body))
+	}
+}
+
+// TestCountIsValidated keeps the field from turning into a way to make the server
+// do unbounded work, and from reaching fitsim as something it cannot parse.
+func TestCountIsValidated(t *testing.T) {
+	for _, count := range []string{"0", "-1", "101", "abc", "1.5", "1e9", " 2"} {
+		t.Run(count, func(t *testing.T) {
+			req := buildRequest(t, []formField{
+				{key: "activity", value: "run"},
+				{key: "speed", value: "10.0"},
+				{key: "datetime", value: "26-08-26 09:00:00"},
+				{key: "count", value: count},
+			})
+			rec := httptest.NewRecorder()
+			simulateHandler(rec, req)
+
+			if rec.Code != http.StatusBadRequest {
+				t.Errorf("status = %d, want 400; body: %s", rec.Code, rec.Body.String())
+			}
+		})
 	}
 }

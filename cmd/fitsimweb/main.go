@@ -1,6 +1,8 @@
 package main
 
 import (
+	"archive/zip"
+	"bytes"
 	"embed"
 	"fmt"
 	"io"
@@ -9,8 +11,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
+
+	"fitsim/pkg/series"
 )
 
 // staticFS holds the browser UI. Embedding it means fitsimweb.exe is still a
@@ -81,10 +86,33 @@ var allowedActivities = map[string]bool{
 // allowedFlags is the set of fitsim flags a client may set through form fields.
 // "file" and "kml" are deliberately absent: both are filesystem paths that the
 // server chooses inside its own temp directory, and letting a client supply them
-// would turn this handler into an arbitrary read/write primitive.
+// would turn this handler into an arbitrary read/write primitive. "count" is
+// absent too, but for a different reason: it multiplies the work the subprocess
+// does, so parseCount vets it rather than passing it straight through.
 var allowedFlags = map[string]bool{
 	"datetime": true, "distance": true, "duration": true, "reps": true,
 	"sets": true, "speed": true, "sport": true, "type": true,
+}
+
+// maxSeriesFiles caps how many FIT files one request may ask for. Each one is a
+// full simulation, so an unbounded count would let a single request occupy the
+// server for as long as it liked.
+const maxSeriesFiles = 100
+
+// parseCount reads the optional "count" form field. Absent or empty means one
+// file, which is what every client asked for before the field existed.
+func parseCount(raw string) (int, error) {
+	if raw == "" {
+		return 1, nil
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, fmt.Errorf("'count' must be a whole number")
+	}
+	if n < 1 || n > maxSeriesFiles {
+		return 0, fmt.Errorf("'count' must be between 1 and %d", maxSeriesFiles)
+	}
+	return n, nil
 }
 
 func simulateHandler(w http.ResponseWriter, r *http.Request) {
@@ -111,6 +139,12 @@ func simulateHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	count, err := parseCount(r.FormValue("count"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	// Setup a temporary directory for this request
 	tempDir, err := os.MkdirTemp("", "fitsimweb-*")
 	if err != nil {
@@ -119,7 +153,10 @@ func simulateHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer os.RemoveAll(tempDir) // cleanup after request
 
-	outFitFile := filepath.Join(tempDir, "output.fit")
+	// The base name decides what the series is called: with --count 3, fitsim
+	// turns "run.fit" into run1.fit, run2.fit and run3.fit, and those are the
+	// names the client sees inside the zip.
+	outFitFile := filepath.Join(tempDir, activity+".fit")
 
 	// Construct command arguments
 	args := []string{activity}
@@ -133,7 +170,7 @@ func simulateHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	args = append(args, "--file", outFitFile)
+	args = append(args, "--file", outFitFile, "--count", strconv.Itoa(count))
 
 	// Handle uploaded KML file if present. The client-supplied filename is
 	// discarded rather than joined onto tempDir. mime/multipart already reduces
@@ -179,18 +216,52 @@ func simulateHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Read generated FIT file
-	fitData, err := os.ReadFile(outFitFile)
+	// One file goes back as-is; a series is zipped, because a single response
+	// body cannot carry several downloads.
+	body, filename, contentType, err := collectOutput(tempDir, activity, count)
 	if err != nil {
+		log.Printf("collecting output failed: %s", err)
 		http.Error(w, "Failed to read generated FIT file", http.StatusInternalServerError)
 		return
 	}
 
 	// Send file as download
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s.fit\"", activity))
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(fitData)))
-	w.Write(fitData)
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(body)))
+	w.Write(body)
+}
+
+// collectOutput gathers what fitsim wrote into dir and returns the response
+// body along with the name and type to serve it under. The series is small
+// enough (maxSeriesFiles activities) to hold in memory, and buffering it means
+// a read failure is still a clean 500 rather than a truncated download.
+func collectOutput(dir, activity string, count int) ([]byte, string, string, error) {
+	if count == 1 {
+		data, err := os.ReadFile(filepath.Join(dir, activity+".fit"))
+		return data, activity + ".fit", "application/octet-stream", err
+	}
+
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for i := 1; i <= count; i++ {
+		name := series.Filename(activity+".fit", i, count)
+		data, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			return nil, "", "", err
+		}
+		entry, err := zw.Create(name)
+		if err != nil {
+			return nil, "", "", err
+		}
+		if _, err := entry.Write(data); err != nil {
+			return nil, "", "", err
+		}
+	}
+	if err := zw.Close(); err != nil {
+		return nil, "", "", err
+	}
+	return buf.Bytes(), activity + ".zip", "application/zip", nil
 }
 
 func fileExists(p string) bool {
