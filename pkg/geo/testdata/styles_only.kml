@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>Styles but no geometry</name>
+    <Style id="line-1267FF-5000-nodesc-normal">
+      <LineStyle><color>ffff6712</color><width>5</width></LineStyle>
+      <BalloonStyle><text><![CDATA[<h3>$[name]</h3>]]></text></BalloonStyle>
+    </Style>
+    <StyleMap id="line-1267FF-5000-nodesc">
+      <Pair><key>normal</key><styleUrl>#line-1267FF-5000-nodesc-normal</styleUrl></Pair>
+    </StyleMap>
+  </Document>
+</kml>

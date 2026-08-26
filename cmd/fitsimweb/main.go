@@ -22,14 +22,37 @@ func main() {
 	}
 }
 
+// maxUploadBytes caps the whole request body, not just the part of it that
+// ParseMultipartForm is willing to buffer in memory.
+const maxUploadBytes = 10 << 20
+
+// allowedActivities is the set of fitsim subcommands a client may ask for. The
+// value also lands in a response header, so it must never be free-form.
+var allowedActivities = map[string]bool{
+	"cardio": true, "cycle": true, "ebike": true, "field": true, "hike": true,
+	"meditation": true, "row": true, "run": true, "ski": true, "strength": true,
+	"swim": true, "walk": true, "yoga": true,
+}
+
+// allowedFlags is the set of fitsim flags a client may set through form fields.
+// "file" and "kml" are deliberately absent: both are filesystem paths that the
+// server chooses inside its own temp directory, and letting a client supply them
+// would turn this handler into an arbitrary read/write primitive.
+var allowedFlags = map[string]bool{
+	"datetime": true, "distance": true, "duration": true, "reps": true,
+	"sets": true, "speed": true, "sport": true, "type": true,
+}
+
 func simulateHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Only POST method is allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes)
+
 	// Parse multipart form (max 10 MB)
-	if err := r.ParseMultipartForm(10 << 20); err != nil {
+	if err := r.ParseMultipartForm(maxUploadBytes); err != nil {
 		http.Error(w, "Failed to parse form", http.StatusBadRequest)
 		return
 	}
@@ -37,6 +60,10 @@ func simulateHandler(w http.ResponseWriter, r *http.Request) {
 	activity := r.FormValue("activity")
 	if activity == "" {
 		http.Error(w, "Missing 'activity' field", http.StatusBadRequest)
+		return
+	}
+	if !allowedActivities[activity] {
+		http.Error(w, "Unknown 'activity' value", http.StatusBadRequest)
 		return
 	}
 
@@ -53,20 +80,26 @@ func simulateHandler(w http.ResponseWriter, r *http.Request) {
 	// Construct command arguments
 	args := []string{activity}
 	
-	// Dynamically add all other form fields as flags (except activity and file)
+	// Add the recognised form fields as flags. Values are passed in "--flag=value"
+	// form so that a value beginning with a dash can never be re-read as a flag
+	// of its own.
 	for key, values := range r.MultipartForm.Value {
-		if key != "activity" && key != "file" && len(values) > 0 {
-			args = append(args, "--"+key, values[0])
+		if allowedFlags[key] && len(values) > 0 {
+			args = append(args, "--"+key+"="+values[0])
 		}
 	}
 
 	args = append(args, "--file", outFitFile)
 
-	// Handle uploaded KML file if present
-	file, header, err := r.FormFile("kml_file")
+	// Handle uploaded KML file if present. The client-supplied filename is
+	// discarded rather than joined onto tempDir. mime/multipart already reduces
+	// it with filepath.Base (RFC 7578, Section 4.2), so this is belt and braces
+	// rather than a live traversal hole, but the server has no reason to let a
+	// client name a file on its disk at all.
+	file, _, err := r.FormFile("kml_file")
 	if err == nil {
 		defer file.Close()
-		kmlPath := filepath.Join(tempDir, header.Filename)
+		kmlPath := filepath.Join(tempDir, "route.kml")
 		dst, err := os.Create(kmlPath)
 		if err != nil {
 			http.Error(w, "Failed to save KML file", http.StatusInternalServerError)

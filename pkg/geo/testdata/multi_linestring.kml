@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <Folder>
+      <name>Leg 1</name>
+      <Placemark>
+        <LineString>
+          <coordinates>
+            23.30000,42.70000,0
+            23.30500,42.70100,0
+            23.31000,42.70250,0
+          </coordinates>
+        </LineString>
+      </Placemark>
+    </Folder>
+    <Folder>
+      <name>Leg 2</name>
+      <Placemark>
+        <LineString>
+          <coordinates>
+            23.31000,42.70250,0
+            23.31600,42.70400,0
+            23.32100,42.70520,0
+          </coordinates>
+        </LineString>
+      </Placemark>
+    </Folder>
+    <Placemark>
+      <name>Waypoint pin</name>
+      <Point><coordinates>23.30000,42.70000,0</coordinates></Point>
+    </Placemark>
+  </Document>
+</kml>

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>Directions from West Gate to East Gate</name>
+    <Style id="line-1267FF-5000-nodesc-normal">
+      <LineStyle><color>ffff6712</color><width>5</width></LineStyle>
+    </Style>
+    <Placemark>
+      <name>Directions from West Gate to East Gate</name>
+      <styleUrl>#line-1267FF-5000-nodesc</styleUrl>
+      <LineString>
+        <tessellate>1</tessellate>
+        <coordinates>
+          23.30000,42.70000,0
+          23.30500,42.70100,0
+          23.31000,42.70250,0
+          23.31600,42.70400,0
+          23.32100,42.70520,0
+          23.32700,42.70610,0
+        </coordinates>
+      </LineString>
+    </Placemark>
+    <Placemark>
+      <name>West Gate</name>
+      <styleUrl>#icon-1899-DB4436-nodesc</styleUrl>
+      <Point>
+        <coordinates>
+          23.3000012,42.6999988,0
+        </coordinates>
+      </Point>
+    </Placemark>
+    <Placemark>
+      <name>East Gate</name>
+      <styleUrl>#icon-1899-DB4436-nodesc</styleUrl>
+      <Point>
+        <coordinates>
+          23.3270031,42.7061042,0
+        </coordinates>
+      </Point>
+    </Placemark>
+  </Document>
+</kml>

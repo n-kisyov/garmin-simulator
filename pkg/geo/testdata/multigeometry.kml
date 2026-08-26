@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <Placemark>
+      <name>Route with an anchor pin in one geometry</name>
+      <MultiGeometry>
+        <LineString>
+          <coordinates>
+            23.30000,42.70000,0
+            23.30500,42.70100,0
+            23.31000,42.70250,0
+          </coordinates>
+        </LineString>
+        <Point>
+          <coordinates>23.40000,42.80000,0</coordinates>
+        </Point>
+      </MultiGeometry>
+    </Placemark>
+  </Document>
+</kml>
