@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>fitsim — Garmin FIT Simulator</title>
+<style>
+  :root {
+    --bg: #f4f5f7;
+    --card: #ffffff;
+    --fg: #16181d;
+    --muted: #6b7280;
+    --border: #dfe2e8;
+    --accent: #1668dc;
+    --accent-fg: #ffffff;
+    --chip: #f0f2f5;
+    --chip-on: #1668dc;
+    --err-bg: #fdecec;
+    --err-fg: #a4262c;
+    --ok-bg: #e9f6ec;
+    --ok-fg: #1a7f37;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16181d;
+      --card: #1e2128;
+      --fg: #e7e9ee;
+      --muted: #9aa1ad;
+      --border: #333843;
+      --accent: #4c93ff;
+      --accent-fg: #0b1220;
+      --chip: #272b34;
+      --chip-on: #4c93ff;
+      --err-bg: #3a1f22;
+      --err-fg: #ff9a9a;
+      --ok-bg: #1c3324;
+      --ok-fg: #7ee2a0;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 32px 16px;
+    background: var(--bg); color: var(--fg);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  .wrap { max-width: 680px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .sub { color: var(--muted); font-size: 13px; margin: 0 0 24px; }
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 20px;
+  }
+  label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+  .hint { font-weight: 400; color: var(--muted); }
+  input, select {
+    width: 100%; padding: 9px 11px; font: inherit;
+    color: var(--fg); background: var(--bg);
+    border: 1px solid var(--border); border-radius: 8px;
+  }
+  input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  input[type=file] { padding: 7px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
+  .chip {
+    padding: 7px 13px; border-radius: 999px; cursor: pointer;
+    background: var(--chip); color: var(--fg); border: 1px solid transparent;
+    font: inherit; font-size: 13px; font-weight: 500;
+  }
+  .chip[aria-pressed="true"] { background: var(--chip-on); color: var(--accent-fg); }
+  .fields { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+  .fields .full { grid-column: 1 / -1; }
+  @media (max-width: 520px) { .fields { grid-template-columns: 1fr; } }
+  button.go {
+    margin-top: 20px; width: 100%; padding: 11px;
+    background: var(--accent); color: var(--accent-fg);
+    border: 0; border-radius: 8px; font: inherit; font-weight: 600; cursor: pointer;
+  }
+  button.go:disabled { opacity: .6; cursor: default; }
+  .msg { margin-top: 16px; padding: 11px 13px; border-radius: 8px; font-size: 13px; white-space: pre-wrap; word-break: break-word; }
+  .msg.err { background: var(--err-bg); color: var(--err-fg); }
+  .msg.ok  { background: var(--ok-bg);  color: var(--ok-fg); }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Garmin FIT Simulator</h1>
+  <p class="sub">Generate a synthetic <code>.fit</code> activity file and download it.</p>
+
+  <div class="card">
+    <label>Activity</label>
+    <div class="chips" id="chips"></div>
+
+    <form id="form">
+      <div class="fields" id="fields"></div>
+      <button class="go" type="submit" id="submit">Generate FIT file</button>
+    </form>
+
+    <div id="msg" class="msg hidden"></div>
+  </div>
+</div>
+
+<script>
+// Mirrors the flags declared in cmd/*.go. kml: "req" matches MarkFlagRequired("kml").
+const ACTIVITIES = {
+  run:        { label: "Run",        fields: ["speed"],                 kml: "req" },
+  walk:       { label: "Walk",       fields: ["speed"],                 kml: "req" },
+  hike:       { label: "Hike",       fields: ["speed"],                 kml: "req" },
+  cycle:      { label: "Cycle",      fields: ["speed"],                 kml: "req" },
+  ebike:      { label: "E-bike",     fields: ["speed_opt"],             kml: "req" },
+  ski:        { label: "Ski",        fields: ["type"],                  kml: "req" },
+  row:        { label: "Row",        fields: ["duration_1800"],         kml: "opt" },
+  swim:       { label: "Swim",       fields: ["distance", "speed"],     kml: "no"  },
+  cardio:     { label: "Cardio",     fields: ["duration_req"],          kml: "no"  },
+  strength:   { label: "Strength",   fields: ["reps", "sets"],          kml: "no"  },
+  field:      { label: "Field",      fields: ["duration_3600", "sport"], kml: "no" },
+  yoga:       { label: "Yoga",       fields: ["duration_1800"],         kml: "no"  },
+  meditation: { label: "Meditation", fields: ["duration_600"],          kml: "no"  },
+};
+
+const FIELDS = {
+  speed:         { name: "speed",    label: "Speed <span class='hint'>km/h</span>", type: "number", step: "0.1", min: "0.1", required: true },
+  speed_opt:     { name: "speed",    label: "Speed <span class='hint'>km/h</span>", type: "number", step: "0.1", min: "0.1", value: "25" },
+  distance:      { name: "distance", label: "Distance <span class='hint'>km</span>", type: "number", step: "0.01", min: "0.01", required: true },
+  duration_req:  { name: "duration", label: "Duration <span class='hint'>seconds</span>", type: "number", step: "1", min: "1", value: "1800", required: true },
+  duration_600:  { name: "duration", label: "Duration <span class='hint'>seconds</span>", type: "number", step: "1", min: "1", value: "600" },
+  duration_1800: { name: "duration", label: "Duration <span class='hint'>seconds</span>", type: "number", step: "1", min: "1", value: "1800" },
+  duration_3600: { name: "duration", label: "Duration <span class='hint'>seconds</span>", type: "number", step: "1", min: "1", value: "3600" },
+  reps:          { name: "reps",     label: "Reps per set", type: "number", step: "1", min: "1", value: "10" },
+  sets:          { name: "sets",     label: "Sets", type: "number", step: "1", min: "1", value: "6" },
+  sport:         { name: "sport",    label: "Sport", options: ["soccer", "basketball", "tennis"] },
+  type:          { name: "type",     label: "Ski type", options: ["alpine", "cross-country"] },
+};
+
+const chipsEl  = document.getElementById("chips");
+const fieldsEl = document.getElementById("fields");
+const msgEl    = document.getElementById("msg");
+const formEl   = document.getElementById("form");
+const submitEl = document.getElementById("submit");
+let current = "run";
+
+for (const [key, cfg] of Object.entries(ACTIVITIES)) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "chip";
+  b.textContent = cfg.label;
+  b.dataset.activity = key;
+  b.addEventListener("click", () => { current = key; render(); });
+  chipsEl.appendChild(b);
+}
+
+// Local "now", rounded to the minute, in the value format datetime-local expects.
+function nowLocal() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+// The CLI parses --datetime with Go layout "02-01-06 15:04:05".
+function toCLIDatetime(v) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(v || "");
+  if (!m) return null;
+  const [, y, mo, d, h, mi, s] = m;
+  return `${d}-${mo}-${y.slice(2)} ${h}:${mi}:${s || "00"}`;
+}
+
+function render() {
+  for (const b of chipsEl.children) {
+    b.setAttribute("aria-pressed", String(b.dataset.activity === current));
+  }
+
+  // Carry over whatever the user already typed, so switching activity does not
+  // wipe a shared field like datetime or speed.
+  const prev = new FormData(formEl);
+  const cfg = ACTIVITIES[current];
+  fieldsEl.innerHTML = "";
+
+  addField({
+    name: "datetime", label: "Start date &amp; time", type: "datetime-local",
+    value: prev.get("datetime") || nowLocal(), required: true, full: true,
+  });
+
+  for (const f of cfg.fields) {
+    const spec = FIELDS[f];
+    addField({ ...spec, value: prev.get(spec.name) || spec.value || "" });
+  }
+
+  if (cfg.kml !== "no") {
+    const req = cfg.kml === "req";
+    addField({
+      name: "kml_file", type: "file", full: true, required: req,
+      accept: ".kml,application/vnd.google-earth.kml+xml",
+      label: req ? "Route KML" : "Route KML <span class='hint'>optional</span>",
+    });
+  }
+}
+
+function addField(spec) {
+  const wrap = document.createElement("div");
+  if (spec.full) wrap.className = "full";
+
+  const label = document.createElement("label");
+  label.innerHTML = spec.label;
+  label.htmlFor = "f_" + spec.name;
+  wrap.appendChild(label);
+
+  let input;
+  if (spec.options) {
+    input = document.createElement("select");
+    for (const o of spec.options) {
+      const opt = document.createElement("option");
+      opt.value = o;
+      opt.textContent = o;
+      if (o === spec.value) opt.selected = true;
+      input.appendChild(opt);
+    }
+  } else {
+    input = document.createElement("input");
+    input.type = spec.type;
+    if (spec.step) input.step = spec.step;
+    if (spec.min) input.min = spec.min;
+    if (spec.accept) input.accept = spec.accept;
+    if (spec.type !== "file" && spec.value != null) input.value = spec.value;
+  }
+  input.id = "f_" + spec.name;
+  input.name = spec.name;
+  if (spec.required) input.required = true;
+  wrap.appendChild(input);
+  fieldsEl.appendChild(wrap);
+}
+
+function show(text, kind) {
+  msgEl.textContent = text;
+  msgEl.className = "msg " + kind;
+}
+
+formEl.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  msgEl.className = "msg hidden";
+
+  const fd = new FormData(formEl);
+  const cli = toCLIDatetime(fd.get("datetime"));
+  if (!cli) {
+    show("Please provide a valid start date and time.", "err");
+    return;
+  }
+  fd.set("datetime", cli);
+  fd.set("activity", current);
+
+  // An empty file input still serializes a zero-byte part; drop it so the server
+  // treats the route as absent rather than as an empty upload.
+  const kml = fd.get("kml_file");
+  if (!kml || !kml.name) fd.delete("kml_file");
+
+  submitEl.disabled = true;
+  submitEl.textContent = "Generating...";
+  try {
+    const res = await fetch("/api/simulate", { method: "POST", body: fd });
+    if (!res.ok) {
+      show((await res.text()).trim() || `Request failed (HTTP ${res.status})`, "err");
+      return;
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${current}.fit`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    show(`Downloaded ${current}.fit (${blob.size.toLocaleString()} bytes).`, "ok");
+  } catch (err) {
+    show("Could not reach the server: " + err.message, "err");
+  } finally {
+    submitEl.disabled = false;
+    submitEl.textContent = "Generate FIT file";
+  }
+});
+
+render();
+</script>
+</body>
+</html>

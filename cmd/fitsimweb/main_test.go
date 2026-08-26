@@ -223,8 +223,3 @@ func TestHappyPathReturnsFIT(t *testing.T) {
 		t.Errorf("Content-Disposition = %q", got)
 	}
 }
-
-func fileExists(p string) bool {
-	_, err := os.Stat(p)
-	return err == nil
-}

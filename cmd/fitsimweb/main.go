@@ -1,6 +1,7 @@
 package main
 
 import (
+	"embed"
 	"fmt"
 	"io"
 	"log"
@@ -12,14 +13,57 @@ import (
 	"time"
 )
 
+// staticFS holds the browser UI. Embedding it means fitsimweb.exe is still a
+// single self-contained binary that can be run from anywhere.
+//
+//go:embed static
+var staticFS embed.FS
+
 func main() {
 	http.HandleFunc("/api/simulate", simulateHandler)
+	http.Handle("/static/", http.FileServer(http.FS(staticFS)))
+	http.HandleFunc("/", indexHandler)
 
 	port := "8088"
-	fmt.Printf("Starting fitsimweb server on port %s...\n", port)
+	fmt.Printf("Starting fitsimweb server on http://localhost:%s ...\n", port)
 	if err := http.ListenAndServe(":"+port, nil); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
+}
+
+// indexHandler serves the UI at "/". The catch-all pattern "/" matches every
+// path no other pattern claims, so anything else still has to 404 explicitly.
+func indexHandler(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" {
+		http.NotFound(w, r)
+		return
+	}
+	page, err := staticFS.ReadFile("static/index.html")
+	if err != nil {
+		http.Error(w, "UI not built into this binary", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Write(page)
+}
+
+// fitsimPath locates the fitsim CLI. Preferring the directory of the running
+// binary means the server no longer depends on being launched from the repo
+// root, with the old relative path and then PATH kept as fallbacks.
+func fitsimPath() string {
+	const exe = "fitsim.exe"
+	if self, err := os.Executable(); err == nil {
+		if p := filepath.Join(filepath.Dir(self), exe); fileExists(p) {
+			return p
+		}
+	}
+	if fileExists(exe) {
+		return "." + string(os.PathSeparator) + exe
+	}
+	if p, err := exec.LookPath(exe); err == nil {
+		return p
+	}
+	return "." + string(os.PathSeparator) + exe
 }
 
 // maxUploadBytes caps the whole request body, not just the part of it that
@@ -127,8 +171,7 @@ func simulateHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Execute fitsim.exe as a subprocess
-	// Note: fitsim.exe must be in the same directory or PATH
-	cmd := exec.Command("./fitsim.exe", args...)
+	cmd := exec.Command(fitsimPath(), args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		log.Printf("fitsim execution failed: %s\nOutput: %s", err, string(output))
@@ -148,4 +191,9 @@ func simulateHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(fitData)))
 	w.Write(fitData)
+}
+
+func fileExists(p string) bool {
+	_, err := os.Stat(p)
+	return err == nil
 }
