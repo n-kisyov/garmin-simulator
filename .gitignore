@@ -3,3 +3,4 @@
 !pkg/geo/testdata/*.kml
 !cmd/testdata/*.kml
 fitsim.exe
+fitsimweb.exe
