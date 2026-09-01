@@ -348,3 +348,61 @@ func TestCountIsValidated(t *testing.T) {
 		})
 	}
 }
+
+// courseKML is a walking loop with elevations baked in, so that a golf request
+// through the handler never sends the subprocess off to the elevation API.
+func courseKML(t *testing.T) string {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join("cmd", "testdata", "course.kml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+// TestGolfRoundGoesThroughTheHandler covers the flags golf adds. The scorecard
+// fields have to survive the trip through the allowlist, or the round silently
+// comes back as the default eighteen instead of the one that was asked for.
+func TestGolfRoundGoesThroughTheHandler(t *testing.T) {
+	chdirToRepoRoot(t)
+	isolatedTempRoot(t)
+
+	req := buildRequest(t, []formField{
+		{key: "activity", value: "golf"},
+		{key: "datetime", value: "26-08-26 09:00:00"},
+		{key: "holes", value: "9"},
+		{key: "par", value: "35"},
+		{key: "score", value: "44"},
+		{key: "speed", value: "4.5"},
+		{key: "kml_file", value: courseKML(t), filename: "course.kml"},
+	})
+	rec := httptest.NewRecorder()
+	simulateHandler(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Content-Disposition"); got != `attachment; filename="golf.fit"` {
+		t.Errorf("Content-Disposition = %q", got)
+	}
+
+	decoded, err := fit.Decode(bytes.NewReader(rec.Body.Bytes()))
+	if err != nil {
+		t.Fatalf("response does not decode as FIT: %v", err)
+	}
+	activity, err := decoded.Activity()
+	if err != nil {
+		t.Fatalf("not an activity file: %v", err)
+	}
+	if len(activity.Laps) != 9 {
+		t.Errorf("got %d laps, want one per hole (9)", len(activity.Laps))
+	}
+	session := activity.Sessions[0]
+	if session.Sport != fit.SportGolf {
+		t.Errorf("session.sport = %v, want golf", session.Sport)
+	}
+	if session.PlayerScore != 44 || session.OpponentScore != 35 {
+		t.Errorf("card came back as %d strokes to a par of %d, want 44 to 35",
+			session.PlayerScore, session.OpponentScore)
+	}
+}

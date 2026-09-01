@@ -17,7 +17,7 @@ func runInteractiveMenu() error {
 		Options: []string{
 			"run", "cycle", "walk", "hike", 
 			"cardio", "strength", "yoga", "meditation", 
-			"swim", "ski", "row", "ebike", "field",
+			"swim", "ski", "row", "ebike", "field", "golf",
 		},
 	}
 	if err := survey.AskOne(prompt, &activityType); err != nil {
@@ -64,6 +64,16 @@ func runInteractiveMenu() error {
 		ebikeKML = askString("Input KML file path:", "route.kml")
 		ebikeSpeed = askFloat("Average speed (km/h):", "25.0")
 		err = ebikeSimulate(nil, nil)
+	case "golf":
+		golfDatetime, golfFile, golfCount = datetimeStr, outFile, count
+		golfKML = askString("Input KML file path (the route walked during the round):", "course.kml")
+		golfHoles = max(askInt("Number of holes:", "18"), 1)
+		// Zero is the answer golf.NewRound reads as "use the standard course and a
+		// mid handicap", which is what an empty prompt should mean here too.
+		golfPar = askInt("Par for the course (0 for the standard layout):", "0")
+		golfScore = askInt("Total strokes (0 for a mid handicap):", "0")
+		golfSpeed = askFloat("Walking speed between shots (km/h):", "4.5")
+		err = golfSimulate(nil, nil)
 	case "ski":
 		skiDatetime, skiFile, skiCount = datetimeStr, outFile, count
 		skiKML = askString("Input KML file path:", "route.kml")

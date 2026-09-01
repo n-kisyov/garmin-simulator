@@ -1,4 +1,5 @@
 *.fit
 *.kml
 !pkg/geo/testdata/*.kml
+!cmd/testdata/*.kml
 fitsim.exe

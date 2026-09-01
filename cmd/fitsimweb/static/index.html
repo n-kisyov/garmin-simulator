@@ -113,6 +113,7 @@ const ACTIVITIES = {
   cardio:     { label: "Cardio",     fields: ["duration_req"],          kml: "no"  },
   strength:   { label: "Strength",   fields: ["reps", "sets"],          kml: "no"  },
   field:      { label: "Field",      fields: ["duration_3600", "sport"], kml: "no" },
+  golf:       { label: "Golf",       fields: ["holes", "par", "score", "speed_walk"], kml: "req" },
   yoga:       { label: "Yoga",       fields: ["duration_1800"],         kml: "no"  },
   meditation: { label: "Meditation", fields: ["duration_600"],          kml: "no"  },
 };
@@ -129,6 +130,13 @@ const FIELDS = {
   sets:          { name: "sets",     label: "Sets", type: "number", step: "1", min: "1", value: "6" },
   sport:         { name: "sport",    label: "Sport", options: ["soccer", "basketball", "tennis"] },
   type:          { name: "type",     label: "Ski type", options: ["alpine", "cross-country"] },
+  speed_walk:    { name: "speed",    label: "Walking speed <span class='hint'>km/h</span>", type: "number", step: "0.1", min: "0.1", value: "4.5" },
+  holes:         { name: "holes",    label: "Holes", type: "number", step: "1", min: "1", max: "45", value: "18", required: true },
+  // Zero is what the CLI reads as "use the standard layout" and "play it to a
+  // mid handicap", so the defaults here leave both blanks at 0 rather than
+  // guessing a course and a score for the user.
+  par:           { name: "par",      label: "Par <span class='hint'>0 = standard</span>", type: "number", step: "1", min: "0", value: "0" },
+  score:         { name: "score",    label: "Strokes <span class='hint'>0 = mid handicap</span>", type: "number", step: "1", min: "0", value: "0" },
 };
 
 const chipsEl  = document.getElementById("chips");
@@ -194,10 +202,12 @@ function render() {
 
   if (cfg.kml !== "no") {
     const req = cfg.kml === "req";
+    let label = req ? "Route KML" : "Route KML <span class='hint'>optional</span>";
+    if (current === "golf") label = "Course KML <span class='hint'>the route walked during the round</span>";
     addField({
       name: "kml_file", type: "file", full: true, required: req,
       accept: ".kml,application/vnd.google-earth.kml+xml",
-      label: req ? "Route KML" : "Route KML <span class='hint'>optional</span>",
+      label,
     });
   }
 }

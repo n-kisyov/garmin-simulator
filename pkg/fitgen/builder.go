@@ -82,6 +82,16 @@ func (b *Builder) AddActivity(timestamp time.Time, totalTimerTime uint32, numSes
 	b.activity.Activity = msg
 }
 
+// SetLocalTimestamp records the activity's timestamp a second time, expressed in
+// local time. A reader recovers the time zone by subtracting the UTC timestamp
+// from it, which is how a viewer decides what hour to show the activity at.
+func (b *Builder) SetLocalTimestamp(t time.Time) {
+	if b.activity.Activity == nil {
+		return
+	}
+	b.activity.Activity.LocalTimestamp = t
+}
+
 // WriteToFile writes the accumulated FIT file to disk.
 func (b *Builder) WriteToFile(filename string) error {
 	file, err := os.Create(filename)

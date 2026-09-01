@@ -78,9 +78,9 @@ const maxUploadBytes = 10 << 20
 // allowedActivities is the set of fitsim subcommands a client may ask for. The
 // value also lands in a response header, so it must never be free-form.
 var allowedActivities = map[string]bool{
-	"cardio": true, "cycle": true, "ebike": true, "field": true, "hike": true,
-	"meditation": true, "row": true, "run": true, "ski": true, "strength": true,
-	"swim": true, "walk": true, "yoga": true,
+	"cardio": true, "cycle": true, "ebike": true, "field": true, "golf": true,
+	"hike": true, "meditation": true, "row": true, "run": true, "ski": true,
+	"strength": true, "swim": true, "walk": true, "yoga": true,
 }
 
 // allowedFlags is the set of fitsim flags a client may set through form fields.
@@ -90,8 +90,9 @@ var allowedActivities = map[string]bool{
 // absent too, but for a different reason: it multiplies the work the subprocess
 // does, so parseCount vets it rather than passing it straight through.
 var allowedFlags = map[string]bool{
-	"datetime": true, "distance": true, "duration": true, "reps": true,
-	"sets": true, "speed": true, "sport": true, "type": true,
+	"datetime": true, "distance": true, "duration": true, "holes": true,
+	"par": true, "reps": true, "score": true, "sets": true, "speed": true,
+	"sport": true, "type": true,
 }
 
 // maxSeriesFiles caps how many FIT files one request may ask for. Each one is a
